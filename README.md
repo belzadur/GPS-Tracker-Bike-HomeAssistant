@@ -91,7 +91,8 @@ map_height: 420       # Höhe der Karte in Pixeln
 show_route: true      # Panel „Route planen"
 show_segments: true   # Segmentliste mit Bestzeiten
 # tile_url: http://dein-tileserver:8080/tile/{z}/{x}/{y}.png
-#   ohne Angabe folgen die Kacheln automatisch dem hellen/dunklen HA-Theme
+#   ohne Angabe kommen die Kacheln von OpenStreetMap Deutschland
+# tile_attribution: "© OpenStreetMap-Mitwirkende"   # Quellenhinweis zum eigenen tile_url
 # notify_service: notify.mobile_app_pixel_9   # nötig für „ans Handy" im Routen-Panel
 ```
 
@@ -99,24 +100,23 @@ Weitere Beispiele: [lovelace-example.yaml](lovelace-example.yaml).
 
 ### Kartenkacheln
 
-Ohne `tile_url` folgt die Karte automatisch deinem HA-Theme: helle Kacheln im
-hellen, dunkle im dunklen Design. Die Kacheln kommen von **CARTO** (auf Basis
-von OpenStreetMap-Daten).
+Ohne `tile_url` kommen die Kacheln von **OpenStreetMap Deutschland**
+(`tile.openstreetmap.de`). Der Dienst ist für private Nutzung ohne
+Registrierung freigegeben ([Nutzungsbedingungen](https://openstreetmap.de/nutzen/dienste-osm-de/)).
+Eine dunkle Variante gibt es dort nicht.
 
-Warum nicht direkt von OpenStreetMap: deren ehrenamtlich betriebene
-Kachel-Server verlangen laut Nutzungsrichtlinie einen `Referer`. Home Assistant
-liefert sein Frontend mit strenger `Referrer-Policy` aus, und aus einem
-LAN-Zugriff heraus reicht auch ein gesetzter Referer nicht – man bekommt dann
-ortsunabhängig immer dieselbe *„Access blocked"*-Grafik statt einer Karte.
+Warum nicht CARTO (bis 0.2.6): CARTO liefert ohne API-Schlüssel nur noch eine
+*„API KEY REQUIRED"*-Grafik. Warum nicht `tile.openstreetmap.org`: dessen
+ehrenamtlich betriebene Server lehnen Anfragen aus einem LAN-Zugriff auch mit
+gesetztem Referer ab (*„Access blocked"*).
 
-Eigener Tile-Server, falls vorhanden:
+Eigener Tile-Server, falls vorhanden – `tile_attribution` setzt den passenden
+Quellenhinweis unten rechts in der Karte:
 
 ```yaml
 tile_url: http://dein-tileserver:8080/tile/{z}/{x}/{y}.png
+tile_attribution: "© OpenStreetMap-Mitwirkende"
 ```
-
-Damit ist die automatische Theme-Umschaltung aus – der eingetragene Server gilt
-dann immer.
 
 ## Entitäten
 
