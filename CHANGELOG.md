@@ -1,5 +1,19 @@
 # Changelog
 
+## Unveröffentlicht
+
+* **Unrealistische Spitzengeschwindigkeit, wenn das Handy kurz hängt.** Manche
+  Handys führen ihre Position zeitweise nicht nach, melden dabei Tempo 0 und
+  holen den Weg danach in einem Schritt auf (z. B. 105 m in 2,8 s). Seit 0.2.6
+  gilt eine gemeldete 0 als „keine Angabe", also wurde das Tempo aus diesem
+  einen Schritt gerechnet: 133 km/h als Maximum einer Radfahrt. Hat ein Gerät
+  seit dem Start schon einmal ein Tempo über 0 gemeldet, hat es einen
+  Speed-Fix, und seine 0 gilt jetzt als echte Angabe. Geräte, die nie ein
+  Tempo melden (der Fall aus 0.2.6), sind unverändert. `trip_from_points`
+  (Import, Neuberechnung) verhält sich genauso, sobald ein Punkt der Fahrt ein
+  Tempo über 0 trägt.
+* Zwei Regressionstests dazu: Live-Erkennung und `trip_from_points`.
+
 ## 0.2.6
 
 * **Fahrten wurden nie erkannt, wenn das Handy keine Geschwindigkeit liefert.**

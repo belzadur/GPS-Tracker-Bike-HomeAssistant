@@ -135,7 +135,9 @@ class Trip:
             self.activity_confidence = result.confidence
 
 
-def resolve_speed(reported: float | None, computed: float) -> float:
+def resolve_speed(
+    reported: float | None, computed: float, trust_zero: bool = False
+) -> float:
     """Decide which speed to trust for one fix.
 
     The device's own Doppler speed is far more accurate than differentiating
@@ -149,8 +151,19 @@ def resolve_speed(reported: float | None, computed: float) -> float:
     "no data" and the speed derived from the positions wins. That costs
     nothing when the rider really is standing still, because then the derived
     speed is near zero too.
+
+    ``trust_zero`` is set once the device has reported a speed above 0. Such
+    a device does have a speed fix, so its 0 is a real reading. This matters
+    when the phone stops updating its position for a while, reports 0 and
+    then catches up on the distance in one step: the speed derived from that
+    single step is far too high (e.g. 105 m in 2.8 s = 133 km/h), the reported
+    0 is right.
     """
-    if reported is not None and 0.0 < reported <= MAX_PLAUSIBLE_SPEED_KMH:
+    if (
+        reported is not None
+        and 0.0 <= reported <= MAX_PLAUSIBLE_SPEED_KMH
+        and (reported > 0.0 or trust_zero)
+    ):
         return reported
     return computed
 
@@ -171,6 +184,7 @@ def trip_from_points(
     trip = Trip(uid=uuid.uuid4().hex, manual=activity is not None)
     if activity is not None:
         trip.activity = activity
+    reports_speed = any((p.reported_speed_kmh or 0.0) > 0.0 for p in points)
 
     previous: GpsPoint | None = None
     for point in points:
@@ -190,7 +204,7 @@ def trip_from_points(
 
         point.distance_m = distance
         point.speed_kmh = resolve_speed(
-            point.reported_speed_kmh, speed_kmh(distance, dt)
+            point.reported_speed_kmh, speed_kmh(distance, dt), reports_speed
         )
 
         trip.points.append(point)
@@ -227,6 +241,9 @@ class TripTracker:
         self._above_since: float | None = None
         self._below_since: float | None = None
         self.rejected_points: int = 0
+        # True once the device has reported a speed above 0; from then on its
+        # 0 counts as a real reading too (see resolve_speed).
+        self._device_reports_speed: bool = False
 
     # -- public API ------------------------------------------------------
 
@@ -244,6 +261,8 @@ class TripTracker:
         """Process one GPS fix."""
         if not self._accept(point):
             return
+        if (point.reported_speed_kmh or 0.0) > 0.0:
+            self._device_reports_speed = True
 
         previous = self._last_point
         if previous is None:
@@ -268,7 +287,9 @@ class TripTracker:
             return
 
         point.distance_m = dist
-        point.speed_kmh = resolve_speed(point.reported_speed_kmh, raw_speed)
+        point.speed_kmh = resolve_speed(
+            point.reported_speed_kmh, raw_speed, self._device_reports_speed
+        )
 
         self._speed_window.append(point.speed_kmh)
         smoothed = self.current_speed_kmh

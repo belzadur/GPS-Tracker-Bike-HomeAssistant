@@ -1,7 +1,7 @@
 """End-to-end tests of the trip detection state machine."""
 
 from bt.const import ACTIVITY_BIKE, ACTIVITY_WALK
-from bt.tracker import GpsPoint, TrackerConfig, TripTracker
+from bt.tracker import GpsPoint, TrackerConfig, TripTracker, trip_from_points
 from simulator import standstill, straight_track
 
 T0 = 1_700_000_000.0
@@ -187,3 +187,53 @@ def test_reported_speed_still_wins_when_the_device_has_one():
 
     # 25 reported beats the ~20 derived from the positions.
     assert all(p.speed_kmh == 25.0 for p in points[1:])
+
+
+# --- a phone that has a speed fix but stalls its position ----------------
+
+
+def stalled_then_catching_up(points, first, count, catch_up_s=4.0):
+    """The phone stops updating its position for ``count`` fixes, reports 0
+    meanwhile and then catches up on the whole distance in one step that
+    arrives ``catch_up_s`` seconds after the last stalled fix."""
+    frozen = points[first - 1]
+    for point in points[first : first + count]:
+        point.lat, point.lon = frozen.lat, frozen.lon
+        point.reported_speed_kmh = 0.0
+    catch_up = points[first + count]
+    catch_up.ts = points[first + count - 1].ts + catch_up_s
+    catch_up.reported_speed_kmh = 0.0
+    return points
+
+
+def reporting(points, speed_kmh):
+    for point in points:
+        point.reported_speed_kmh = speed_kmh
+    return points
+
+
+def test_zero_from_a_device_with_speed_fix_is_trusted():
+    ride = stalled_then_catching_up(
+        reporting(straight_track(T0 + 310, LAT, LON, 20.0, 1200), 20.0), 60, 2
+    )
+    points = (
+        reporting(standstill(T0, LAT, LON, 300), 0.0)
+        + ride
+        + reporting(standstill(T0 + 1520, LAT, LON + 0.1, 400), 0.0)
+    )
+
+    _, finished, _ = run(points)
+
+    assert len(finished) == 1
+    # Derived from the catch-up step this would be ~150 km/h.
+    assert finished[0].max_speed_kmh <= 20.0
+
+
+def test_trip_from_points_trusts_zero_from_a_device_with_speed_fix():
+    points = stalled_then_catching_up(
+        reporting(straight_track(T0, LAT, LON, 20.0, 600), 20.0), 30, 2
+    )
+
+    trip = trip_from_points(points, TrackerConfig(), ACTIVITY_BIKE)
+
+    assert trip.max_speed_kmh <= 20.0
