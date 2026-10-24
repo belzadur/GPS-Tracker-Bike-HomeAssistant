@@ -19,6 +19,7 @@ from homeassistant.util import dt as dt_util
 from .const import ACTIVITIES, DOMAIN
 from .geo import bounding_box, simplify
 from .gpx import build_gpx
+from .merge import merge_trips
 from .routing import async_plan_route
 from .stats import rolling_window
 
@@ -31,6 +32,7 @@ def async_register_views(hass: HomeAssistant) -> None:
     if hass.data.get(_VIEWS_REGISTERED):
         return
     hass.http.register_view(TripsView)
+    hass.http.register_view(TripMergeView)
     hass.http.register_view(TripDetailView)
     hass.http.register_view(TripTrackView)
     hass.http.register_view(TripGpxView)
@@ -85,6 +87,38 @@ class TripsView(HomeAssistantView):
             end,
         )
         return self.json({"trips": trips, "count": len(trips)})
+
+
+class TripMergeView(HomeAssistantView):
+    """POST /api/bike_tracker/merge  Body: {"trip_ids": [4, 5]}"""
+
+    url = "/api/bike_tracker/merge"
+    name = "api:bike_tracker:merge"
+
+    async def post(self, request: web.Request) -> web.Response:
+        coordinator = _coordinator(request)
+        hass: HomeAssistant = request.app["hass"]
+        try:
+            body = await request.json()
+            ids = sorted({int(i) for i in body["trip_ids"]})
+        except (ValueError, KeyError, TypeError):
+            return self.json_message("Body needs trip_ids", 400)
+        if len(ids) < 2:
+            return self.json_message("Need at least two trips", 400)
+
+        async with coordinator._lock:
+            trip = await hass.async_add_executor_job(
+                merge_trips,
+                coordinator.store,
+                ids,
+                coordinator._tracker_config(),
+                coordinator.source_entity,
+            )
+        if trip is None:
+            return self.json_message("Trip not found", 404)
+        await coordinator.async_refresh_statistics()
+        await coordinator.async_match_segments(trip["id"], trip["activity"])
+        return self.json(trip)
 
 
 class TripDetailView(HomeAssistantView):

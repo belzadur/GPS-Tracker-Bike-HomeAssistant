@@ -36,6 +36,7 @@ Was abgedeckt ist:
 | `test_elevation.py` | DEM: Sampling, Batching, Cache, Interpolation, kaputte Antworten |
 | `test_gpx.py` | Export→Import-Roundtrip, Namespaces, Duplikaterkennung |
 | `test_segments.py` | Segment-Treffer, Umweg-Ablehnung, schnellste Runde |
+| `test_merge.py` | Fahrten zusammenführen: Strecke, Pause, Notizen, unbekannte Fahrt |
 
 ---
 

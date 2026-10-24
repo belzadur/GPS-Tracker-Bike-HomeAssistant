@@ -1,5 +1,18 @@
 # Changelog
 
+## Unveröffentlicht
+
+* **Fahrten zusammenführen:** `POST /api/bike_tracker/merge` mit
+  `{"trip_ids": [4, 5]}` legt mehrere Fahrten zu einer zusammen – etwa wenn
+  eine Pause an der Ampel oder beim Bäcker die Fahrt zerteilt hat. Die Punkte
+  aller Fahrten werden nach Zeit sortiert und mit `trip_from_points` neu
+  gerechnet (Strecke, Dauer, Fahrzeit, Tempo, Höhe, Aktivität), Notizen
+  aneinandergehängt, die Ausgangsfahrten gelöscht, Statistik und Segmente neu
+  geprüft. Die Pause zwischen den Fahrten zählt zur Dauer, nicht zur Fahrzeit.
+  Haben alle Fahrten dieselbe Aktivität, bleibt sie erhalten, sonst wird neu
+  klassifiziert. Logik in `merge.py`, ohne Home Assistant testbar.
+* Drei Tests dazu (`test_merge.py`).
+
 ## 0.2.6
 
 * **Fahrten wurden nie erkannt, wenn das Handy keine Geschwindigkeit liefert.**
