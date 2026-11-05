@@ -206,6 +206,7 @@ Tuning-Tabelle in [ARCHITECTURE.md](ARCHITECTURE.md#tuning).
 | Zahlen ändern sich nach einem Update nicht | Nur die Karte aktualisiert, nicht die Integration. `scripts/update_on_ha.sh` holt beides, danach HA neu starten |
 | Karte zeigt Kacheln nicht | Kein Internet auf dem Client, oder `tile_url` zeigt auf einen nicht erreichbaren Tile-Server |
 | Kacheln zeigen „Access blocked – Referer is required" | Alte Karte, die noch die OSM-Server nutzt. Ab 0.2.2 kommen die Kacheln von CARTO – Karte per `wget` aktualisieren und Strg+F5. In der Konsole muss `BIKE-TRACKER-CARD 0.2.2` stehen |
+| Kacheln zeigen „API KEY REQUIRED" | Karte bis 0.2.6 nutzt noch CARTO. Neuere Karte kopieren und Strg+F5, oder `tile_url: https://tile.openstreetmap.de/{z}/{x}/{y}.png` setzen |
 | Keine Fahrten werden erkannt | High Accuracy Mode aus; oder Fahrten sind kürzer als `min_trip_distance_m` / `min_trip_duration_s`; oder `max_accuracy_m` zu streng (im Debug-Log auftauchende verworfene Punkte prüfen) |
 | Position bewegt sich, aber **nie** eine Fahrt – auch nach langen, schnellen Touren | Meldet dein Gerät `speed: 0`, obwohl es fährt? Vor 0.2.6 hat der Tracker das geglaubt und die Geschwindigkeit nie aus den Positionen gerechnet, sodass keine einzige Fahrt entstand. Auf 0.2.6 aktualisieren. Prüfen lässt sich das in *Entwicklerwerkzeuge → Zustände* am Attribut `speed` deiner `device_tracker`-Entität |
 | Eine Fahrt wird in mehrere zerlegt | `Dauer unter Stoppgeschwindigkeit` hoch, z. B. 300 s |

@@ -23,6 +23,14 @@
   Haben alle Fahrten dieselbe Aktivität, bleibt sie erhalten, sonst wird neu
   klassifiziert. Logik in `merge.py`, ohne Home Assistant testbar.
 * Drei Tests dazu (`test_merge.py`).
+* **Karte leer: CARTO verlangt jetzt einen API-Schlüssel.** Statt der Karte kam
+  nur noch die Grafik *„API KEY REQUIRED"*. Die Kacheln kommen jetzt von
+  OpenStreetMap Deutschland (`tile.openstreetmap.de`), privat ohne
+  Registrierung nutzbar; der Referer kommt wie bisher über `referrer_policy`
+  mit. Die automatische Umschaltung auf dunkle Kacheln entfällt, OSM
+  Deutschland hat keine dunkle Variante.
+* Neue Option **`tile_attribution`**: Quellenhinweis zum eigenen `tile_url`.
+  Die Kartenversion steht weiter dahinter.
 
 ## 0.2.6
 

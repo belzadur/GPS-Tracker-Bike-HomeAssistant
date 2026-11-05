@@ -9,19 +9,21 @@
 
 const LEAFLET_JS = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
 const LEAFLET_CSS = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
-// CARTO statt der OpenStreetMap-Server: deren Nutzungsrichtlinie verlangt
-// einen Referer, den das Home-Assistant-Frontend nicht mitschickt - man
-// bekommt dann ortsunabhängig immer dieselbe "Access blocked"-Grafik.
-// CARTO liefert auch ohne Referer echte Kacheln, in zwei Varianten passend
-// zum hellen und dunklen HA-Theme.
-const CARTO_LIGHT = "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png";
-const CARTO_DARK = "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
+// OpenStreetMap Deutschland statt CARTO: CARTO liefert ohne API-Schlüssel nur
+// noch eine "API KEY REQUIRED"-Grafik. Der Server von OSM Deutschland ist für
+// private Nutzung ohne Registrierung freigegeben
+// (https://openstreetmap.de/nutzen/dienste-osm-de/) und nimmt die Anfragen aus
+// dem HA-Frontend an, weil die Kacheln über referrerPolicy den Origin
+// mitschicken. Eine dunkle Variante gibt es dort nicht.
+const DEFAULT_TILE_URL = "https://tile.openstreetmap.de/{z}/{x}/{y}.png";
 const CARD_VERSION = "0.2.6";
 // Die Version steht mit in der Attribution: so lässt sich auf einen Blick
 // sehen, welcher Stand geladen ist, ohne die Browser-Konsole zu öffnen.
 // Nach einem Update ist das die schnellste Probe, ob der Cache noch die alte
 // Datei festhält.
-const TILE_ATTRIBUTION = `© OpenStreetMap, © CARTO · Karte v${CARD_VERSION}`;
+const TILE_ATTRIBUTION =
+  '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap-Mitwirkende</a>, ' +
+  '<a href="https://tile.openstreetmap.de/">OSM Deutschland</a>';
 
 const ACTIVITY_ICON = { bike: "🚲", walk: "🚶", car: "🚗", unknown: "❓" };
 const ACTIVITY_LABEL = { bike: "Rad", walk: "Fuß", car: "Auto", unknown: "?" };
@@ -115,8 +117,8 @@ class BikeTrackerCard extends HTMLElement {
       activity: "bike",
       limit: 25,
       days: 30,
-      // tile_url absichtlich ohne Vorgabe: ohne Angabe folgt die Karte dem
-      // hellen/dunklen HA-Theme, siehe _tileUrl().
+      // tile_url absichtlich ohne Vorgabe, siehe _tileUrl(); tile_attribution
+      // ersetzt den Quellenhinweis, wenn ein eigener Kachel-Server eingetragen ist.
       referrer_policy: "strict-origin-when-cross-origin",
       map_height: 500,
       show_route: true,
@@ -134,8 +136,6 @@ class BikeTrackerCard extends HTMLElement {
       this._refresh();
     } else {
       this._updateLive();
-      // The user may have flipped the HA theme since the last update.
-      this._syncTileTheme();
     }
   }
 
@@ -628,21 +628,10 @@ class BikeTrackerCard extends HTMLElement {
 
   // ----------------------------------------------------------------- map
 
-  _isDarkTheme() {
-    return !!(this._hass && this._hass.themes && this._hass.themes.darkMode);
-  }
-
   _tileUrl() {
     // An explicit tile_url always wins - that is the escape hatch for a
     // self-hosted tile server.
-    if (this._config.tile_url) return this._config.tile_url;
-    return this._isDarkTheme() ? CARTO_DARK : CARTO_LIGHT;
-  }
-
-  _syncTileTheme() {
-    if (!this._tileLayer || this._config.tile_url) return;
-    const wanted = this._tileUrl();
-    if (this._tileLayer._url !== wanted) this._tileLayer.setUrl(wanted);
+    return this._config.tile_url || DEFAULT_TILE_URL;
   }
 
   async _ensureMap() {
@@ -683,7 +672,7 @@ class BikeTrackerCard extends HTMLElement {
       });
       this._tileLayer = L.tileLayer(this._tileUrl(), {
         maxZoom: 19,
-        attribution: TILE_ATTRIBUTION,
+        attribution: `${this._config.tile_attribution || TILE_ATTRIBUTION} · Karte v${CARD_VERSION}`,
         // Home Assistant serves its frontend with a no-referrer policy, and
         // OpenStreetMap's volunteer tile servers reject requests that arrive
         // without a Referer ("Access blocked"). A policy set on the image
