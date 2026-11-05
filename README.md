@@ -177,6 +177,7 @@ Alle Endpunkte brauchen ein gültiges HA-Token.
 | `GET /api/bike_tracker/trips/{id}` | Fahrt inkl. Track, Höhen- und Tempoprofil |
 | `POST /api/bike_tracker/trips/{id}` | `{"activity": "...", "note": "..."}` |
 | `DELETE /api/bike_tracker/trips/{id}` | löschen |
+| `POST /api/bike_tracker/merge` | `{"trip_ids": [4, 5]}` – Fahrten zu einer zusammenführen |
 | `GET /api/bike_tracker/trips/{id}/track?tolerance=5` | vereinfachter Track |
 | `GET /api/bike_tracker/trips/{id}/gpx` | GPX-Download |
 | `GET /api/bike_tracker/stats?days=30` | Aggregate + Tageswerte |
