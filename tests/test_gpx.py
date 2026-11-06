@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import pytest
-from simulator import straight_track
-
 from bt.gpx import GpxError, build_gpx, parse_gpx
 from bt.importer import is_duplicate, trip_from_gpx_track
 from bt.tracker import TrackerConfig
+from simulator import straight_track
 
 START_TS = 1_720_000_000.0
 

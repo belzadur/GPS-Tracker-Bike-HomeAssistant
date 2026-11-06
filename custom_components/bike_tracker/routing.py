@@ -18,6 +18,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+import aiohttp
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -58,10 +59,17 @@ async def async_plan_route(
     ).rstrip("/")
     session = async_get_clientsession(hass)
 
-    if "brouter" in base_url:
-        route = await _brouter(session, base_url, origin, target, profile)
-    else:
-        route = await _osrm(session, base_url, origin, target)
+    try:
+        if "brouter" in base_url:
+            route = await _brouter(session, base_url, origin, target, profile)
+        else:
+            route = await _osrm(session, base_url, origin, target)
+    except (aiohttp.ClientError, TimeoutError, ValueError) as err:
+        # Server down, slow or answering garbage: a clear message for the
+        # card and the service caller instead of a traceback.
+        raise HomeAssistantError(
+            f"Routing backend {base_url} not reachable: {err}"
+        ) from err
 
     route["start"] = list(origin)
     route["destination"] = list(target)

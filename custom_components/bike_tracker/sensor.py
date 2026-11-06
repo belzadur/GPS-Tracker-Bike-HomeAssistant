@@ -150,8 +150,11 @@ def _period_sensors() -> tuple[BikeSensorDescription, ...]:
     result: list[BikeSensorDescription] = []
     for period in (PERIOD_TODAY, PERIOD_WEEK, PERIOD_MONTH, PERIOD_YEAR, PERIOD_TOTAL):
         # Calendar buckets reset, so TOTAL_INCREASING would be wrong for them.
+        # The all-time totals are TOTAL, not TOTAL_INCREASING: they go down
+        # when a trip is deleted, merged or reclassified, and HA would read
+        # that drop as a meter reset and add the whole total to the sum again.
         state_class = (
-            SensorStateClass.TOTAL_INCREASING
+            SensorStateClass.TOTAL
             if period == PERIOD_TOTAL
             else SensorStateClass.MEASUREMENT
         )
