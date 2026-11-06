@@ -181,41 +181,97 @@ def trip_from_points(
 
     Passing ``activity`` pins the classification instead of guessing it.
     """
+    return trip_from_segments([points], cfg, activity)
+
+
+def trip_from_segments(
+    segments: list[list[GpsPoint]],
+    cfg: TrackerConfig,
+    activity: str | None = None,
+) -> Trip:
+    """Build one finished trip out of several recorded tracks.
+
+    Used to merge trips. Each segment is recalculated on its own; the gap
+    between two segments (a train, a bus, a break) is neither distance nor
+    moving time, and its points are never compared across the gap - so a
+    fast leg in between cannot make the next segment look like a GPS jump
+    and get thrown away. Elevation gain and loss are summed per segment,
+    the climb across the gap does not count.
+    """
     trip = Trip(uid=uuid.uuid4().hex, manual=activity is not None)
     if activity is not None:
         trip.activity = activity
-    reports_speed = any((p.reported_speed_kmh or 0.0) > 0.0 for p in points)
+    segments = [sorted(seg, key=lambda p: p.ts) for seg in segments if seg]
+    segments.sort(key=lambda seg: seg[0].ts)
+    reports_speed = any(
+        (p.reported_speed_kmh or 0.0) > 0.0 for seg in segments for p in seg
+    )
 
-    previous: GpsPoint | None = None
-    for point in points:
-        if previous is None:
-            point.speed_kmh = point.reported_speed_kmh or 0.0
+    kept: list[list[GpsPoint]] = []
+    for segment in segments:
+        previous: GpsPoint | None = None
+        kept_here: list[GpsPoint] = []
+        for point in segment:
+            if previous is None:
+                if trip.points and point.ts <= trip.points[-1].ts:
+                    # Overlaps the segment before - nothing new in time.
+                    continue
+                point.speed_kmh = point.reported_speed_kmh or 0.0
+                point.distance_m = 0.0
+                trip.points.append(point)
+                kept_here.append(point)
+                previous = point
+                continue
+
+            dt = point.ts - previous.ts
+            if dt < MIN_SEGMENT_SECONDS:
+                continue
+
+            distance = haversine(previous.lat, previous.lon, point.lat, point.lon)
+            if speed_kmh(distance, dt) > MAX_PLAUSIBLE_SPEED_KMH:
+                continue
+
+            point.distance_m = distance
+            point.speed_kmh = resolve_speed(
+                point.reported_speed_kmh, speed_kmh(distance, dt), reports_speed
+            )
+
             trip.points.append(point)
+            kept_here.append(point)
+            trip.distance_m += distance
+            trip.max_speed_kmh = max(trip.max_speed_kmh, point.speed_kmh)
+            if point.speed_kmh >= MOVING_SPEED_THRESHOLD_KMH:
+                trip.moving_time_s += dt
             previous = point
-            continue
-
-        dt = point.ts - previous.ts
-        if dt < MIN_SEGMENT_SECONDS:
-            continue
-
-        distance = haversine(previous.lat, previous.lon, point.lat, point.lon)
-        if speed_kmh(distance, dt) > MAX_PLAUSIBLE_SPEED_KMH:
-            continue
-
-        point.distance_m = distance
-        point.speed_kmh = resolve_speed(
-            point.reported_speed_kmh, speed_kmh(distance, dt), reports_speed
-        )
-
-        trip.points.append(point)
-        trip.distance_m += distance
-        trip.max_speed_kmh = max(trip.max_speed_kmh, point.speed_kmh)
-        if point.speed_kmh >= MOVING_SPEED_THRESHOLD_KMH:
-            trip.moving_time_s += dt
-        previous = point
+        if kept_here:
+            kept.append(kept_here)
 
     trip.finalize(cfg)
+    if cfg.use_gps_altitude and len(kept) > 1:
+        _elevation_per_segment(trip, kept, cfg.elevation_threshold_m)
     return trip
+
+
+def _elevation_per_segment(
+    trip: Trip, segments: list[list[GpsPoint]], threshold_m: float
+) -> None:
+    gain = loss = 0.0
+    lows: list[float] = []
+    highs: list[float] = []
+    for segment in segments:
+        seg_gain, seg_loss, low, high = elevation_stats(
+            [p.alt for p in segment], threshold_m
+        )
+        gain += seg_gain
+        loss += seg_loss
+        if low is not None:
+            lows.append(low)
+        if high is not None:
+            highs.append(high)
+    trip.elevation_gain_m = round(gain, 1)
+    trip.elevation_loss_m = round(loss, 1)
+    trip.elevation_min_m = round(min(lows), 1) if lows else None
+    trip.elevation_max_m = round(max(highs), 1) if highs else None
 
 
 class TripTracker:
@@ -308,11 +364,25 @@ class TripTracker:
         if now - self._last_point.ts >= self.config.stale_timeout_s:
             self._finish("stale")
 
-    def force_start(self, point: GpsPoint | None = None) -> None:
-        """Manually open a trip (service call)."""
+    def force_start(
+        self, point: GpsPoint | None = None, now: float | None = None
+    ) -> None:
+        """Manually open a trip (service call).
+
+        The last known fix seeds the trip only if it is recent. A phone at
+        rest sends no updates, so that fix can be hours old; seeding with it
+        would count the whole wait as trip duration and moving time.
+        """
         if self.state == STATE_ACTIVE:
             return
         seed = point or self._last_point
+        if (
+            point is None
+            and seed is not None
+            and now is not None
+            and now - seed.ts > self.config.stale_timeout_s
+        ):
+            seed = None
         self.trip = Trip(uid=uuid.uuid4().hex, manual=True)
         if seed is not None:
             self.trip.points.append(seed)

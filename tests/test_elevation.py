@@ -7,7 +7,6 @@ from collections.abc import Coroutine
 from typing import Any
 
 import pytest
-
 from bt.elevation import (
     MAX_LOCATIONS_PER_REQUEST,
     ElevationCache,

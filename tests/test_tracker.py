@@ -237,3 +237,30 @@ def test_trip_from_points_trusts_zero_from_a_device_with_speed_fix():
     trip = trip_from_points(points, TrackerConfig(), ACTIVITY_BIKE)
 
     assert trip.max_speed_kmh <= 20.0
+
+
+def test_manual_start_ignores_an_old_fix():
+    # The phone sat still for five hours, so the last fix is old. A manual
+    # start must not stretch the trip back to it.
+    tracker = TripTracker()
+    old = straight_track(T0, LAT, LON, 0.0, 0)[0]
+    tracker.add_point(old)
+    later = T0 + 5 * 3600
+    tracker.force_start(now=later)
+    ride = straight_track(later + 5, LAT, LON + 0.001, 16.0, 600)
+    for point in ride:
+        tracker.add_point(point)
+    finished = []
+    tracker._on_finished = finished.append
+    tracker.force_stop()
+    trip = finished[0]
+    assert trip.duration_s < 700
+    assert trip.moving_time_s < 700
+
+
+def test_manual_start_keeps_a_fresh_fix():
+    tracker = TripTracker()
+    first = straight_track(T0, LAT, LON, 12.0, 0)[0]
+    tracker.add_point(first)
+    tracker.force_start(now=T0 + 20)
+    assert tracker.trip.points == [first]

@@ -14,6 +14,7 @@ from homeassistant.const import (
     ATTR_GPS_ACCURACY,
     ATTR_LATITUDE,
     ATTR_LONGITUDE,
+    EVENT_HOMEASSISTANT_STOP,
     STATE_UNAVAILABLE,
     STATE_UNKNOWN,
 )
@@ -99,6 +100,10 @@ class BikeTrackerCoordinator:
         self.last_trip: dict[str, Any] | None = None
         self._unsubs: list[Any] = []
         self._lock = asyncio.Lock()
+        # Saves still running; awaited before Home Assistant stops or the
+        # database is closed, so no ride is written into a closed store.
+        self._store_tasks: set[asyncio.Task[None]] = set()
+        self._stopping = False
         # Riding the same roads over and over means most DEM lookups are
         # repeats - the cache keeps those off the network entirely.
         self._elevation_cache = ElevationCache()
@@ -189,7 +194,7 @@ class BikeTrackerCoordinator:
                 track,
                 self._elevation_cache,
             )
-        except (ElevationError, aiohttp.ClientError, asyncio.TimeoutError) as err:
+        except (TimeoutError, ElevationError, aiohttp.ClientError) as err:
             _LOGGER.warning(
                 "DEM elevation lookup against %s failed (%s) - keeping GPS altitude",
                 self.elevation_url,
@@ -276,6 +281,13 @@ class BikeTrackerCoordinator:
         self._unsubs.append(
             async_track_time_interval(self.hass, self._handle_tick, TICK_INTERVAL)
         )
+        # Home Assistant does not unload config entries when it stops, so
+        # async_shutdown never runs on a restart. Save a running ride here.
+        self._unsubs.append(
+            self.hass.bus.async_listen(
+                EVENT_HOMEASSISTANT_STOP, self._async_handle_ha_stop
+            )
+        )
         self._unsubs.append(
             async_track_time_interval(
                 self.hass, self._handle_stats_tick, STATS_REFRESH_INTERVAL
@@ -290,13 +302,23 @@ class BikeTrackerCoordinator:
             if point is not None:
                 self.tracker.add_point(point)
 
+    async def _async_handle_ha_stop(self, _event: Event) -> None:
+        self._stopping = True
+        await self.async_save_running_trip()
+
+    async def async_save_running_trip(self) -> None:
+        """Close a running ride and wait until every pending save is done."""
+        if self.tracker.is_recording:
+            self.tracker.force_stop()
+        if self._store_tasks:
+            await asyncio.gather(*list(self._store_tasks), return_exceptions=True)
+
     async def async_shutdown(self) -> None:
+        """Unload: stop listening, save a running ride, then close the store."""
         for unsub in self._unsubs:
             unsub()
         self._unsubs.clear()
-        # Persist a ride that is still running so a restart does not lose it.
-        if self.tracker.is_recording:
-            self.tracker.force_stop()
+        await self.async_save_running_trip()
         await self.hass.async_add_executor_job(self.store.close)
 
     # -- event handling --------------------------------------------------
@@ -364,7 +386,9 @@ class BikeTrackerCoordinator:
         )
 
     def _handle_trip_finished(self, trip: Trip) -> None:
-        self.hass.async_create_task(self._async_store_trip(trip))
+        task = self.hass.async_create_task(self._async_store_trip(trip))
+        self._store_tasks.add(task)
+        task.add_done_callback(self._store_tasks.discard)
 
     def _handle_trip_discarded(self, trip: Trip, reason: str) -> None:
         _LOGGER.debug(
@@ -384,7 +408,13 @@ class BikeTrackerCoordinator:
             self._handle_trip_discarded(trip, f"filtered:{trip.activity}")
             return
 
-        await self._async_apply_dem(trip)
+        if self._stopping:
+            # No network lookups while Home Assistant shuts down; the DEM
+            # elevation can be refreshed later for this trip.
+            if self.elevation_source == ELEVATION_SOURCE_DEM:
+                self._recompute_elevation(trip)
+        else:
+            await self._async_apply_dem(trip)
 
         async with self._lock:
             trip_id = await self.hass.async_add_executor_job(

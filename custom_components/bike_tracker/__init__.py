@@ -163,7 +163,9 @@ def _async_register_services(hass: HomeAssistant) -> None:
         return
 
     async def handle_start(call: ServiceCall) -> None:
-        _first_coordinator(hass).tracker.force_start()
+        _first_coordinator(hass).tracker.force_start(
+            now=dt_util.utcnow().timestamp()
+        )
 
     async def handle_stop(call: ServiceCall) -> None:
         _first_coordinator(hass).tracker.force_stop()

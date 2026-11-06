@@ -72,3 +72,44 @@ def test_unknown_trip_changes_nothing(tmp_path):
 
     assert merge_trips(store, [ids[0], 9999], TrackerConfig()) is None
     assert sorted(trip["id"] for trip in store.list_trips()) == ids
+
+
+def _store_with_gap(tmp_path, gap_km, gap_s):
+    """Two rides with a fast leg (train, bus) between them."""
+    store = TripStore(str(tmp_path / "test.db"))
+    store.connect()
+    first = _ride(T0, LON)
+    end = first.points[-1]
+    # Due east, gap_km further along.
+    second_lon = end.lon + gap_km / (111.32 * 0.6088)
+    second = _ride(end.ts + gap_s, second_lon)
+    ids = [
+        store.save_trip(first, "device_tracker.phone"),
+        store.save_trip(second, "device_tracker.phone"),
+    ]
+    return store, ids, first, second
+
+
+def test_train_between_rides_keeps_every_point(tmp_path):
+    # 110 km in 27 min is faster than any plausible GPS speed; the second
+    # ride must still survive the merge completely.
+    store, ids, first, second = _store_with_gap(tmp_path, 110.0, 27 * 60)
+
+    merged = merge_trips(store, ids, TrackerConfig())
+
+    assert len(store.get_track(merged["id"])) == len(first.points) + len(
+        second.points
+    )
+    total = first.distance_m + second.distance_m
+    assert abs(merged["distance_m"] - total) < 0.02 * total
+
+
+def test_bus_between_rides_is_not_distance(tmp_path):
+    # 18 km by bus in 30 min would otherwise count as 18 km and 30 min riding.
+    store, ids, first, second = _store_with_gap(tmp_path, 18.0, 30 * 60)
+
+    merged = merge_trips(store, ids, TrackerConfig())
+
+    total = first.distance_m + second.distance_m
+    assert abs(merged["distance_m"] - total) < 0.02 * total
+    assert merged["moving_time_s"] < first.moving_time_s + second.moving_time_s + 60
